@@ -580,7 +580,7 @@ class LaneFinding:
             self.pos.append(pos)
 
         # unwarp and draw the filled lines
-        output_image = self.unwarp(input_image, warped_binary, M_inv, left_fitx, right_fitx, ploty)
+        output_image = self.unwarp(undistort_img, warped_binary, M_inv, left_fitx, right_fitx, ploty)
 
         # get running avg
         left_curv_avg = LaneFinding.rolling_mean(self.left_curv, 25)

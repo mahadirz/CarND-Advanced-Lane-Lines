@@ -27,8 +27,9 @@ The goals / steps of this project are the following:
 [img_unwarp]: ./writeup_images/unwarp.png "Unwarp"
 [img_final]: ./writeup_images/final.png "final"
 [img_test_images]: ./writeup_images/all_test_images.png "img_test_images"
-[img_anomaly_1]: ./writeup_images/anomaly_1.png "anomaly_1"
+[img_anomaly_1]: ./writeup_images/anomaly_1.jpg "anomaly_1"
 [img_anomaly_2]: ./writeup_images/anomaly_2.png "anomaly_2"
+[img_youtube]: ./writeup_images/youtube.png "youtube"
 
 ### Project Structures
 
@@ -335,7 +336,7 @@ The full codes that generate the following image can be found in [`camera calibr
 
 Here's a [link to my video result](./project_video_output.mp4)
 
-[![video](https://img.youtube.com/vi/dg7BeNz5qtA/0.jpg)](https://www.youtube.com/watch?v=dg7BeNz5qtA)
+[![video](./writeup_images/youtube.png)](https://www.youtube.com/watch?v=dg7BeNz5qtA)
 
 ---
 

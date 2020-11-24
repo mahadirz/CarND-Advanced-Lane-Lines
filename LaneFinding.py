@@ -10,20 +10,30 @@ from scipy.ndimage.filters import uniform_filter1d
 class LaneFinding:
 
     def __init__(self, dist_pickle_path):
+        self.lane_width = []
         self.s_thresh = (170, 255)
         self.sx_thresh = (20, 100)
         self.dist_pickle = pickle.load(open(dist_pickle_path, "rb"))
         self.ym_per_pix = 30 / 720
-        self.xm_per_pix = 3.7 / 700
+        self.xm_per_pix = 3.7 / 830
 
         # vertices to select the Region of Interest
         # @todo dynamically determine this region
         self.vertices = np.array([[
-            [280, 700],
-            [595, 460],
-            [725, 460],
-            [1125, 700]
+            [193, 720],  # Bottom left
+            [580, 460],  # Top left
+            [700, 460],  # Top right
+            [1110, 720]  # Bottom right
         ]], dtype=np.int32)
+
+        self.src = self.vertices.reshape([4, 2]).astype('float32')
+
+        self.dst = np.float32([
+            [300, 720],  # Bottom left
+            [300, 0],  # Top left
+            [970, 0],  # Top right
+            [970, 720]  # Bottom right
+        ])
 
         # HYPERPARAMETERS
         # Choose the number of sliding windows
@@ -56,8 +66,10 @@ class LaneFinding:
         self.left_curv = []
         self.right_curv = []
         self.pos = []
+        self.num_search_scratch = 0
 
         self.is_debug = False
+        self.debug_frames = []
 
     def reset(self):
         self.nframe = 0
@@ -68,6 +80,7 @@ class LaneFinding:
         self.left_curv = []
         self.right_curv = []
         self.pos = []
+        self.num_search_scratch = 0
 
     def undistort(self, img):
         """
@@ -128,19 +141,18 @@ class LaneFinding:
         combined_binary[(s_binary == 1) | (sxbinary == 1)] = 1
         return combined_binary
 
-    def warp_perspective(self, img):
+    def warp_perspective(self, img, src=None, dst=None):
         """
         Perform perspective Warp and return warped image and inverse M
         :param img:
+        :param src:
+        :param dst:
         :return:
         """
-        src = np.float32(self.vertices)
-        dst = np.float32([
-            [250, img.shape[0]],  # Bottom left
-            [250, 0],  # Top left
-            [1065, 0],  # Top right
-            [1065, img.shape[0]]  # Bottom right
-        ])
+        if src is None:
+            src = self.src
+        if dst is None:
+            dst = self.dst
         # Given src and dst points, calculate the perspective transform matrix
         M = cv2.getPerspectiveTransform(src, dst)
         ret, M_inv = cv2.invert(M)
@@ -191,6 +203,8 @@ class LaneFinding:
         left_lane_inds = []
         right_lane_inds = []
 
+        rects = []
+
         # Step through the windows one by one
         for window in range(self.nwindows):
             # Identify window boundaries in x and y (and right and left)
@@ -201,11 +215,16 @@ class LaneFinding:
             win_xright_low = rightx_current - self.margin
             win_xright_high = rightx_current + self.margin
 
-            # Draw the windows on the visualization image
-            cv2.rectangle(out_img, (win_xleft_low, win_y_low),
-                          (win_xleft_high, win_y_high), (0, 255, 0), 2)
-            cv2.rectangle(out_img, (win_xright_low, win_y_low),
-                          (win_xright_high, win_y_high), (0, 255, 0), 2)
+            rects.append(
+                [
+                    [
+                        (win_xleft_low, win_y_low), (win_xleft_high, win_y_high)
+                    ],
+                    [
+                        (win_xright_low, win_y_low), (win_xright_high, win_y_high)
+                    ]
+                ]
+            )
 
             # Identify the nonzero pixels in x and y within the window #
             good_left_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) &
@@ -237,31 +256,7 @@ class LaneFinding:
         rightx = nonzerox[right_lane_inds]
         righty = nonzeroy[right_lane_inds]
 
-        return leftx, lefty, rightx, righty, out_img
-
-    def draw_polynomial(self, binary_warped, ploty, leftx, lefty, rightx, righty, left_fitx, right_fitx):
-        """
-        Visualization
-        Colors in the left and right lane regions
-
-        :param binary_warped:
-        :param ploty:
-        :param leftx:
-        :param lefty:
-        :param rightx:
-        :param righty:
-        :param left_fitx:
-        :param right_fitx:
-        :return:
-        """
-        binary_warped[lefty, leftx] = [255, 0, 0]
-        binary_warped[righty, rightx] = [0, 0, 255]
-
-        # Plots the left and right polynomials on the lane lines
-        plt.plot(left_fitx, ploty, color='yellow')
-        plt.plot(right_fitx, ploty, color='yellow')
-
-        return binary_warped
+        return leftx, lefty, rightx, righty, out_img, rects
 
     def avg_line_fit(self, prev_fit, fit, nwindow=10):
         """
@@ -331,43 +326,89 @@ class LaneFinding:
 
         # Create an image to draw on and an image to show the selection window
         out_img = np.dstack((binary_warped, binary_warped, binary_warped)) * 255
-        # Color in left and right line pixels
-        out_img[nonzeroy[left_lane_inds], nonzerox[left_lane_inds]] = [255, 0, 0]
-        out_img[nonzeroy[right_lane_inds], nonzerox[right_lane_inds]] = [0, 0, 255]
 
         return leftx, lefty, rightx, righty, out_img
 
-    def visualize_search_poly(self, binary_warped, left_fitx, right_fitx, ploty):
+    @staticmethod
+    def fill_poly_line(binary_warped, x, y, margin=3, color=(255, 255, 0), intensity=1.0):
         """
         :param binary_warped:
-        :param left_fitx:
-        :param right_fitx:
-        :param ploty:
+        :param x:
+        :param y:
+        :param margin:
+        :param color:
+        :param intensity:
         :return:
         """
-        ## Visualization ##
         # Generate a polygon to illustrate the search window area
         window_img = np.zeros_like(binary_warped)
         # And recast the x and y points into usable format for cv2.fillPoly()
-        left_line_window1 = np.array([np.transpose(np.vstack([left_fitx - self.margin, ploty]))])
-        left_line_window2 = np.array([np.flipud(np.transpose(np.vstack([left_fitx + self.margin,
-                                                                        ploty])))])
-        left_line_pts = np.hstack((left_line_window1, left_line_window2))
-        right_line_window1 = np.array([np.transpose(np.vstack([right_fitx - self.margin, ploty]))])
-        right_line_window2 = np.array([np.flipud(np.transpose(np.vstack([right_fitx + self.margin,
-                                                                         ploty])))])
-        right_line_pts = np.hstack((right_line_window1, right_line_window2))
+        left_line_window1 = np.array([np.transpose(np.vstack([x - margin, y]))])
+        left_line_window2 = np.array([np.flipud(np.transpose(np.vstack([x + margin,
+                                                                        y])))])
+        line_pts = np.hstack((left_line_window1, left_line_window2))
 
         # Draw the lane onto the warped blank image
-        cv2.fillPoly(window_img, np.int_([left_line_pts]), (0, 255, 0))
-        cv2.fillPoly(window_img, np.int_([right_line_pts]), (0, 255, 0))
-        result = cv2.addWeighted(binary_warped, 1, window_img, 0.3, 0)
+        cv2.fillPoly(window_img, np.int_([line_pts]), color)
+        result = cv2.addWeighted(binary_warped, 1, window_img, intensity, 0)
+        return result
+
+    def draw_search_sliding(self, binary_warped, rects, ploty, leftx, lefty, rightx, righty, left_fitx, right_fitx):
+        """
+        Visualization
+        Colors in the left and right lane regions
+        """
+        binary_warped[lefty, leftx] = [255, 0, 0]
+        binary_warped[righty, rightx] = [0, 0, 255]
+
+        # draw the sliding rectangles
+        for rect in rects:
+            cv2.rectangle(binary_warped, rect[0][0],
+                          rect[0][1], (0, 255, 0), 2)
+            cv2.rectangle(binary_warped, rect[1][0],
+                          rect[1][1], (0, 255, 0), 2)
+
+        binary_warped = self.fill_poly_line(binary_warped, left_fitx, ploty, margin=3)
+        binary_warped = self.fill_poly_line(binary_warped, right_fitx, ploty, margin=3)
+
+        return binary_warped
+
+    def draw_search_poly(
+            self, binary_warped, ploty, leftx, lefty, rightx, righty,
+            left_fitx, right_fitx, margin=100
+    ):
+        """
+        Visualize the search using polynomial search
+        :param binary_warped:
+        :param ploty:
+        :param leftx:
+        :param lefty:
+        :param rightx:
+        :param righty:
+        :param left_fitx:
+        :param right_fitx:
+        :param margin:
+        :return:
+        """
+        # Generate a polygon to illustrate the search window area
+        binary_warped[lefty, leftx] = [255, 0, 0]
+        binary_warped[righty, rightx] = [0, 0, 255]
+
+        binary_warped = self.fill_poly_line(
+            binary_warped, left_fitx, ploty, margin=margin,
+            color=(0, 255, 0),
+            intensity=0.3
+        )
+        binary_warped = self.fill_poly_line(
+            binary_warped, right_fitx, ploty, margin=margin,
+            color=(0, 255, 0),
+            intensity=0.3
+        )
 
         # Plot the polynomial lines onto the image
-        plt.plot(left_fitx, ploty, color='yellow')
-        plt.plot(right_fitx, ploty, color='yellow')
-        ## End visualization steps ##
-        return result
+        binary_warped = self.fill_poly_line(binary_warped, left_fitx, ploty, margin=3)
+        binary_warped = self.fill_poly_line(binary_warped, right_fitx, ploty, margin=3)
+        return binary_warped
 
     def unwarp(self, original_img, warped_binary, M_inv, left_fitx, right_fitx, ploty):
         """
@@ -494,27 +535,39 @@ class LaneFinding:
         :param input_image:
         :return:
         """
+        self.nframe += 1
+
         undistort_img = self.undistort(input_image)
         binary_image = self.binarize_image(undistort_img)
         warped_binary, M_inv = self.warp_perspective(binary_image)
         leftx, lefty, rightx, righty = [], [], [], []
+        lane_width = 0
         if len(self.left_fits) > 0 and len(self.right_fits) > 0:
             leftx, lefty, rightx, righty, out_img = self.search_around_poly(
                 warped_binary, self.left_fits[-1], self.right_fits[-1]
             )
-        min_conf_threshold = 9000
-        if len(leftx) < min_conf_threshold and len(rightx) < min_conf_threshold and \
-                len(lefty) < min_conf_threshold and len(righty) < min_conf_threshold:
-            # search from scratch
-            leftx, lefty, rightx, righty, out_img = self.find_lane_pixels(warped_binary)
+            left_fitx, right_fitx, ploty, left_fit, right_fit = self.fit_polynomial(out_img, leftx, lefty, rightx,
+                                                                                    righty)
+            lane_width = np.array([right_fitx - left_fitx]).mean()
 
-        left_fitx, right_fitx, ploty, left_fit, right_fit = self.fit_polynomial(out_img, leftx, lefty, rightx,
-                                                                                righty)
+        min_conf_threshold = 9000
+        if len(leftx) < min_conf_threshold or len(rightx) < min_conf_threshold or \
+                len(lefty) < min_conf_threshold or len(righty) < min_conf_threshold \
+                or 733.33 > lane_width or lane_width > 918.85:
+            # search from scratch
+            leftx, lefty, rightx, righty, out_img, _ = self.find_lane_pixels(warped_binary)
+
+            left_fitx, right_fitx, ploty, left_fit, right_fit = self.fit_polynomial(out_img, leftx, lefty, rightx,
+                                                                                    righty)
+
+            lane_width = np.array([right_fitx - left_fitx]).mean()
+            self.num_search_scratch += 1
 
         self.left_fitx.append(left_fitx)
         self.left_fits.append(left_fit)
         self.right_fitx.append(right_fitx)
         self.right_fits.append(right_fit)
+        self.lane_width.append(lane_width)
 
         left_curverad, right_curverad = self.get_curvature_radius(ploty, left_fitx, right_fitx)
         if left_curverad and left_curverad > 0:
@@ -534,10 +587,10 @@ class LaneFinding:
         right_curv_avg = LaneFinding.rolling_mean(self.right_curv, 25)
         pos_avg = LaneFinding.rolling_mean(self.pos, 10)
         curverad = (left_curv_avg + right_curv_avg) / 2
-        if curverad > 9000 and self.is_debug:
+        if self.is_debug:
             # debug
-            cv2.imwrite("debug/video_" + str(self.nframe) + ".jpg", cv2.cvtColor(input_image, cv2.COLOR_BGR2RGB))
+            if self.nframe in self.debug_frames:
+                cv2.imwrite("debug/video_" + str(self.nframe) + ".jpg", cv2.cvtColor(input_image, cv2.COLOR_BGR2RGB))
         output_image = self.add_num_estimation(output_image, curverad, pos_avg)
 
-        self.nframe += 1
         return output_image

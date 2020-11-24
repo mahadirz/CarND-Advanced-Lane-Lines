@@ -27,9 +27,9 @@ The goals / steps of this project are the following:
 
 ### Project Structures
 
-* [`camera calibration.ipynb`]("camera calibration.ipynb") is the notebook for creating the calibration matrix.
+* [`camera calibration.ipynb`](<camera calibration.ipynb>) is the notebook for creating the calibration matrix.
 * [`LaneFinding.py`](LaneFinding.py) stores the class for line finding code
-* [`Lane Finding Prototyping.ipynb`]("Lane Finding Prototyping.ipynb") Example of LaneFinding class usage
+* [`Lane Finding Prototyping.ipynb`](<Lane Finding Prototyping.ipynb>) Example of LaneFinding class usage
 * `calibration.pickle` is the saved pickle file for the calibration matrix
 * [`project_video_output.mp4`](project_video_output.mp4) the vide output for the project
 * `output_images` a the folder that contains image output for the project test images
@@ -43,7 +43,7 @@ to find the camera matrix and distortion coefficients to be used in further stag
 
 According to OpenCV python documentation, at least 10 test pattern images are required to get the calibration data [[1]](https://opencv-python-tutroals.readthedocs.io/en/latest/py_tutorials/py_calib3d/py_calibration/py_calibration.html).
 In this project, 20 images of 9x6 chessboard are provided inside the `camera_cal` folder. 
-The full steps of the calibration can be found in the [`camera calibration.ipynb`]("camera calibration.ipynb")  codescalibration as such:
+The full steps of the calibration can be found in the [`camera calibration.ipynb`](<camera calibration.ipynb>)  codescalibration as such:
 
 ```python
 ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, img_size,None,None)
